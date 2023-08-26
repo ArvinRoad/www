@@ -1,0 +1,54 @@
+name: hexo-build
+# 仓库main分支有推送时执行jobs下定义的任务
+on:
+  push:
+    branches:
+      - main
+# 设置时区为上海
+env:
+  TZ: Asia/Shanghai
+jobs:
+  # 定义名为blog-build的任务
+  www-build:
+    # 定义运行的操作系统
+    runs-on: ubuntu-latest
+    # 定义步骤
+    steps:
+      # 签出仓库的默认分支，此处即为main，同时迁出子项目，此处即为主题仓库
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+      # 安装代号为Hydrogen的Node.js，此为目前最新的长期支持版本，同时进行全局缓存
+      - name: Install Node.js lts/Hydrogen
+        uses: actions/setup-node@v3
+        with:
+          node-version: "lts/Hydrogen"
+          cache: "npm"
+      - name: Install hexo-cli
+        run: npm install -g hexo-cli
+      # 缓存文件夹node_modules并生成唯一码
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        id: cache-dependencies
+        with:
+          path: node_modules
+          key: ${{runner.OS}}-${{hashFiles('**/package-lock.json')}}
+      # 如果唯一码为比对成功，重新安装依赖
+      - name: Install dependencies
+        if: steps.cache-dependencies.outputs.cache-hit != 'true'
+        run: npm ci
+      - name: Setup private rsa key
+        env:
+          DEPLOY_KEY: ${{secrets.DEPLOY_KEY}}
+        run: |
+          mkdir -p ~/.ssh/
+          echo "$DEPLOY_KEY" > ~/.ssh/id_rsa 
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          ssh-keyscan gitee.com >> ~/.ssh/known_hosts
+      - name: Deploy
+        run: |
+          git config --global user.name "${{secrets.GIT_NAME}}"
+          git config --global user.email "${{secrets.GIT_EMAIL}}"
+          hexo g -d
